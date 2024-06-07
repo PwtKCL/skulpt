@@ -32,7 +32,9 @@ function generateTurtleModule(_target) {
             animate    : true, // enabled/disable all animated rendering
             bufferSize : 0, // default turtle buffer size
             allowUndo  : true, // enable ability to use the undo buffer
-            assets     : {}
+            assets     : {},
+            MouseEventsListenerOffEventName: "SkTurtleMouseEventListenerOff",
+            TimerEventsListenerOffEventName: "SkTurtleTimerEventListenerOff",
         },
         _frameRequest,
         _frameRequestTimeout,
@@ -346,8 +348,12 @@ function generateTurtleModule(_target) {
                 if (computed) return;
                 var world = getScreen();
                 var rect  = world.spriteLayer().canvas.getBoundingClientRect();
-                x         = e.clientX - rect.left | 0;
-                y         = e.clientY - rect.top  | 0;
+                // The coordinates x/y may be offset because of a potential Turtle placeholder scaling.
+                // Therefore, we first check if basic style scaling is defined on the Turtle placeholder,
+                // and if so, amend the coordinates to render the equivalent of a 1:1 ratio value.
+                var scale = (getTarget().style.scale.length > 0) ? parseFloat(getTarget().style.scale) : 1;
+                x         = Math.round((e.clientX - rect.left) / scale) | 0;
+                y         = Math.round((e.clientY - rect.top) / scale)  | 0;
                 localX    = x * world.xScale + world.llx;
                 localY    = y * world.yScale + world.ury;
                 computed = true;
@@ -375,6 +381,14 @@ function generateTurtleModule(_target) {
         };
 
         proto.reset = function() {
+            // The reset should not just delete the managers, but also remove the event listeners properly.
+            Object.entries(this._managers).forEach(([type, eventMgrs]) => {
+                eventMgrs.forEach((eventMgr) => {
+                    if(eventMgr._handlers){
+                        eventMgr._handlers.forEach((handler) => getTarget().removeEventListener(type, handler));
+                    }
+                });
+            });
             this._managers = {};
         };
 
@@ -1112,6 +1126,14 @@ function generateTurtleModule(_target) {
 
         proto.$onclick = function(method, btn, add) {
             this.getManager("mousedown").addHandler(method, add);
+            // Set a notification flag directly to the Sk.TurtleGraphics object if listening
+            // or send a notification event when listening stops
+            if(method != undefined) {
+                Sk.TurtleGraphics.isListeningMouseEvents = true;
+            }
+            else {
+                window.dispatchEvent(new CustomEvent(Sk.TurtleGraphics.MouseEventsListenerOffEventName))
+            }
         };
         proto.$onclick.minArgs = 1;
         proto.$onclick.co_varnames = ["method", "btn", "add"];
@@ -1209,7 +1231,11 @@ function generateTurtleModule(_target) {
             return this._managers[type];
         };
 
-        proto.reset = function() {
+        /**
+         * Reset the Turtle Screen
+         * @param {boolean} keepShowingUI - Optional flag indicating to keep the Turtle Graphics target as it is
+         */
+        proto.reset = function(keepShowingUI) {
             var key;
 
             this._keyListeners = undefined;
@@ -1230,6 +1256,11 @@ function generateTurtleModule(_target) {
                 this._keyUpListener = undefined;
             }
 
+            if(!this._keyDownListener && !this._keyUpListener){
+                // Set a notification flag directly to the Sk.TurtleGraphics object
+                Sk.TurtleGraphics.isListeningKeyEvents = false;
+            }
+
             if (this._timer) {
                 window.clearTimeout(this._timer);
                 this._timer = undefined;
@@ -1240,10 +1271,12 @@ function generateTurtleModule(_target) {
             }
 
             this._mode = "standard";
-            removeLayer(this._sprites);
-            this._sprites = undefined;
-            removeLayer(this._background);
-            this._background = undefined;
+            if(!keepShowingUI) {
+                removeLayer(this._sprites);
+                this._sprites = undefined;
+                removeLayer(this._background);
+                this._background = undefined;
+            }
         };
 
         proto.setUpWorld = function(llx, lly, urx, ury) {
@@ -1464,6 +1497,14 @@ function generateTurtleModule(_target) {
         proto.$onclick = function(method, btn, add) {
             if (this._exitOnClick) return;
             this.getManager("mousedown").addHandler(method, add);
+            // Set a notification flag directly to the Sk.TurtleGraphics object if listening
+            // or send a notification event when listening stops
+            if(method != undefined) {
+                Sk.TurtleGraphics.isListeningMouseEvents = true;
+            }
+            else {
+                window.dispatchEvent(new CustomEvent(Sk.TurtleGraphics.MouseEventsListenerOffEventName))
+            }
         };
         proto.$onclick.minArgs = 1;
         proto.$onclick.co_varnames = ["method", "btn", "add"];
@@ -1563,6 +1604,8 @@ function generateTurtleModule(_target) {
         proto.$listen = function() {
             this._createKeyUpListener();
             this._createKeyDownListener();
+            // Set a notification flag directly to the Sk.TurtleGraphics object
+            Sk.TurtleGraphics.isListeningKeyEvents = true;
         };
 
         proto.$onkey = function(method, keyValue) {
@@ -1587,6 +1630,14 @@ function generateTurtleModule(_target) {
 
         proto.$onscreenclick = function(method, btn, add) {
             this.getManager("mousedown").addHandler(method, add);
+            // Set a notification flag directly to the Sk.TurtleGraphics object if listening
+            // or send a notification event when listening stops
+            if(method != undefined) {
+                Sk.TurtleGraphics.isListeningMouseEvents = true;
+            }
+            else {
+                window.dispatchEvent(new CustomEvent(Sk.TurtleGraphics.MouseEventsListenerOffEventName))
+            }
         };
         proto.$onscreenclick.minArgs = 1;
         proto.$onscreenclick.co_varnames = ["method", "btn", "add"];
@@ -1595,10 +1646,14 @@ function generateTurtleModule(_target) {
             if (this._timer) {
                 window.clearTimeout(this._timer);
                 this._timer = undefined;
+                // Send a notification event when listening stops
+                window.dispatchEvent(new CustomEvent(Sk.TurtleGraphics.TimerEventsListenerOffEventName));
             }
 
             if (method && typeof interval === "number") {
                 this._timer = window.setTimeout(method, Math.max(0, interval|0));
+                // Set a notification flag directly to the Sk.TurtleGraphics object
+                Sk.TurtleGraphics.isListeningTimerEvents = true;
             }
         };
         proto.$ontimer.minArgs = 0;
@@ -2375,12 +2430,16 @@ function generateTurtleModule(_target) {
         return _focus;
     }
 
-    function resetTurtle() {
+    /**
+     * Reset the Turtle and its environment.
+     * @param {boolean} keepShowingUI - Optional flag indicating to keep the Turtle Graphics target as it is 
+     */
+    function resetTurtle(keepShowingUI) {
         cancelAnimationFrame();
-        getScreen().reset();
-        getFrameManager().reset();
+        getScreen().reset(keepShowingUI);
+        if(!keepShowingUI) getFrameManager().reset();
 
-        while (_target.firstChild) {
+        while (!keepShowingUI && _target.firstChild) {
             _target.removeChild(_target.firstChild);
         }
 
