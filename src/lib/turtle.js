@@ -1,9 +1,6 @@
 var $builtinmodule = function (name) {
 "use strict";
 
-var DEFAULT_MOUSE_EVENT_LISTENER_OFF_NOTIF_NAME = "SkTurtleMouseEventListenerOff";
-var DEFAULT_TIMER_EVENT_LISTENER_OFF_NOTIF_NAME = "SkTurtleTimerEventListenerOff";
-
 function getConfiguredTarget() {
     var selector, target;
 
@@ -36,8 +33,8 @@ function generateTurtleModule(_target) {
             bufferSize : 0, // default turtle buffer size
             allowUndo  : true, // enable ability to use the undo buffer
             assets     : {},
-            MouseEventsListenerOffEventName: DEFAULT_MOUSE_EVENT_LISTENER_OFF_NOTIF_NAME,
-            TimerEventsListenerOffEventName: DEFAULT_TIMER_EVENT_LISTENER_OFF_NOTIF_NAME,
+            MouseEventsListenerOffEventName: "SkTurtleMouseEventListenerOff",
+            TimerEventsListenerOffEventName: "SkTurtleTimerEventListenerOff",
         },
         _frameRequest,
         _frameRequestTimeout,
@@ -1234,6 +1231,10 @@ function generateTurtleModule(_target) {
             return this._managers[type];
         };
 
+        /**
+         * Reset the Turtle Screen
+         * @param {boolean} keepShowingUI - Optional flag indicating to keep the Turtle Graphics target as it is
+         */
         proto.reset = function(keepShowingUI) {
             var key;
 
@@ -2429,6 +2430,10 @@ function generateTurtleModule(_target) {
         return _focus;
     }
 
+    /**
+     * Reset the Turtle and its environment.
+     * @param {boolean} keepShowingUI - Optional flag indicating to keep the Turtle Graphics target as it is 
+     */
     function resetTurtle(keepShowingUI) {
         cancelAnimationFrame();
         getScreen().reset(keepShowingUI);
